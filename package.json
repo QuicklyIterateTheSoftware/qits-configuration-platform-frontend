@@ -1,6 +1,6 @@
 {
   "name": "qits-spa-configuration",
-  "version": "2026.907.181345",
+  "version": "2026.907.231853",
   "private": true,
   "description": "The deployment-configuration frontend: an Angular application that consumes @qits/ui-components from qits' own npm registry. It ships no image — qits-configuration serves it via Quinoa at the root of its own host.",
   "license": "MIT",
