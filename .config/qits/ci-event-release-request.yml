@@ -47,7 +47,7 @@ when:
   # repoName, not repoId: the git host's storage coordinate is an opaque UUID since
   # the identity cutover, so a name match on repoId is not dependable. The event
   # echoes the public name; a rename updates this line in the same campaign.
-  - repoName: { exact: qits-configuration-frontend }
+  - repoName: { exact: qits-configuration-platform-frontend }
 
 checkout:
   branch: backingBranch

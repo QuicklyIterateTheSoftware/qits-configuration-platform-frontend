@@ -142,12 +142,12 @@ describe('app routes', () => {
    * keeps working — the platform serves links in both spellings, and both land on the same page.
    */
   it('serves the doors under a repository addressed by its component', async () => {
-    expect(await resolve('/qits/qits-configuration/qits-configuration-service')).toBe(
+    expect(await resolve('/qits/qits-configuration/qits-configuration-platform-service')).toBe(
       await resolve('/'),
     );
     expect(
       await resolve(
-        '/qits/qits-configuration/qits-configuration-service/applications/qits-docs/history',
+        '/qits/qits-configuration/qits-configuration-platform-service/applications/qits-docs/history',
       ),
     ).toBe(await resolve('/applications/qits-docs/history'));
   });

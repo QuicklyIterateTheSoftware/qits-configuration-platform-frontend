@@ -1,4 +1,4 @@
-# qits-configuration-frontend
+# qits-configuration-platform-frontend
 
 The deployment configuration's frontend: what each application on this platform will be deployed
 with, and the screen an operator reads it on. Served by qits-configuration itself at the **root of
@@ -99,12 +99,11 @@ it. None of them is in this app's API class to be reached for.
 
 ## How it is served
 
-qits-configuration-service carries this repository as a git submodule at `service/src/main/webui` —
-Quinoa's
-ui-dir — and builds it during `mvn package`, serving the bundle at the root of its host. The root is
-spelled here as `baseHref` in `angular.json` and there as `quarkus.quinoa.ui-root-path`, both `/`;
-the two move together, and a disagreement serves a page whose every asset 404s. This repository
-ships no container image of its own.
+qits-configuration-platform-service carries this repository as a git submodule at
+`service/src/main/webui` — Quinoa's ui-dir — and builds it during `mvn package`, serving the bundle
+at the root of its host. The root is spelled here as `baseHref` in `angular.json` and there as
+`quarkus.quinoa.ui-root-path`, both `/`; the two move together, and a disagreement serves a page
+whose every asset 404s. This repository ships no container image of its own.
 
 `/configuration` is the MACHINE segment now — the API and the framework root — and both spellings of
 it answer 404 rather than this page. That is what `quarkus.quinoa.ignored-path-prefixes` is for, and
