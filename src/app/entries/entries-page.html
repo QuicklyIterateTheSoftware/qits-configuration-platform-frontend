@@ -1,65 +1,157 @@
 <p class="crumbs">
   <a [routerLink]="links.commands()">Applications</a>
   <span class="sep">/</span>
-  <span>{{ application() }}</span>
+  <a [routerLink]="links.commands('applications', application())">{{ application() }}</a>
+  @if (env()) {
+    <span class="sep">/</span>
+    <span>{{ env() }}</span>
+  }
 </p>
 
 <header class="head">
-  <h1>{{ application() }}</h1>
-  <a class="history-link" [routerLink]="links.commands('applications', application(), 'history')"
-    >History</a
-  >
+  <h1>{{ heading() }}</h1>
+  <nav class="head-links" aria-label="Other views of this application">
+    @if (env()) {
+      <a
+        class="resolved-link"
+        [routerLink]="links.commands('applications', application(), 'envs', env(), 'resolved')"
+        >Resolved</a
+      >
+      <a
+        class="history-link"
+        [routerLink]="links.commands('applications', application(), 'envs', env(), 'history')"
+        >History</a
+      >
+    }
+    <a
+      class="declarations-link"
+      [routerLink]="links.commands('applications', application(), 'declarations')"
+      >Declarations</a
+    >
+    <a class="matrix-link" [routerLink]="links.commands('applications', application(), 'matrix')"
+      >Matrix</a
+    >
+  </nav>
 </header>
 <p class="lede">
-  What this application's next deployment will carry. Every change is kept, with who made it.
+  The entries stored for this application in this environment — what its next deployment here will
+  carry over its declared defaults. Every change is kept, with who made it.
 </p>
 <p class="posture">
-  The platform's own processes write these entries through the API, so this view is read-only.
+  The platform's own processes write these entries through the API, so this view is read-only. The
+  environment picker below navigates; it changes nothing.
 </p>
+
+<section class="env-bar" aria-label="Environment">
+  <p class="env-label">Environment</p>
+
+  <app-async
+    [state]="envsState()"
+    loadingLabel="Loading environments"
+    errorLabel="Could not load the environments"
+    (retry)="loadEnvs()"
+  />
+
+  @if (envsState().kind === 'ready') {
+    @if (envs().length === 0) {
+      <app-empty [message]="envsEmptyMessage()" />
+    } @else {
+      <qits-picker
+        [options]="envOptions()"
+        [value]="picked()"
+        (valueChange)="onPick($event)"
+        ariaLabel="Environment"
+        placeholder="Pick an environment"
+        clearLabel="Change environment"
+      />
+    }
+  }
+
+  @if (settled()) {
+    <p class="settled" role="status">
+      This address names no environment, so it reads {{ env() }} — the first tier this application
+      is configured in. Picking one addresses it; nothing here has moved you.
+    </p>
+  }
+</section>
+
+<app-async
+  [state]="declarationState()"
+  loadingLabel="Loading the governing declaration"
+  errorLabel="Could not load the governing declaration, so the types below are missing"
+  (retry)="loadDeclaration()"
+/>
 
 <app-async
   [state]="state()"
   loadingLabel="Loading entries"
   errorLabel="Could not load the entries"
-  (retry)="load()"
+  (retry)="loadEntries()"
 />
 
 @if (state().kind === 'ready') {
-  @if (entries().length === 0) {
-    <app-empty
-      message="This application has no entries. It will deploy with whatever its image and the deployer's own defaults give it."
-    />
+  @if (rows().length === 0) {
+    <app-empty [message]="emptyMessage()" />
   } @else {
     <div class="scroll">
       <table>
         <caption>
           {{
             caption()
-          }}, stored now.
+          }}, stored for this environment now. A type comes from the application's governing
+          declaration; a key it does not spell has none, and says so by being orphaned.
         </caption>
         <thead>
           <tr>
             <th scope="col">Key</th>
+            <th scope="col">Type</th>
             <th scope="col">Value</th>
-            <th scope="col">Class</th>
+            <th scope="col">Set by</th>
             <th scope="col">Changed</th>
           </tr>
         </thead>
         <tbody>
-          @for (entry of entries(); track entry.key) {
+          @for (row of rows(); track row.entry.key) {
             <tr>
-              <th scope="row" class="mono key">{{ entry.key }}</th>
-              <td class="value mono">
-                @if (entry.value.length === 0) {
-                  <span class="subtle empty-value">(empty)</span>
+              <th scope="row" class="mono key">
+                {{ row.entry.key }}
+                @if (row.entry.orphaned) {
+                  <span class="marks">
+                    <qits-badge label="orphaned" tone="warning" />
+                  </span>
+                }
+              </th>
+              <td class="type">
+                @if (row.type) {
+                  <qits-badge [label]="row.type" [tone]="row.typeTone" />
+                  @if (row.systemOnly) {
+                    <span class="marks">
+                      <qits-badge label="platform-rendered" tone="warning" />
+                    </span>
+                  }
                 } @else {
-                  {{ entry.value }}
+                  <span class="subtle undeclared">not declared</span>
                 }
               </td>
-              <td><qits-badge [label]="entry.entryClass" tone="neutral" /></td>
+              <td class="value mono">
+                @if (row.entry.value.length === 0) {
+                  <span class="subtle empty-value">(empty)</span>
+                } @else {
+                  {{ row.entry.value }}
+                }
+                @if (row.systemOnly) {
+                  <span class="rendered-note">
+                    The platform renders this address per environment —
+                    <code>http://{{ row.address }}</code> on the platform plane,
+                    <code>http://{{ env() }}-{{ row.address }}</code> on the environment plane. The
+                    value stored here is ignored.
+                  </span>
+                }
+              </td>
+              <td><qits-badge [label]="row.classLabel" [tone]="row.classTone" /></td>
               <td class="subtle changed">
-                {{ formatInstant(entry.updatedAt) }}<br />
-                <span class="by">by {{ actor(entry.updatedBy) }}</span>
+                {{ formatInstant(row.entry.updatedAt) }}<br />
+                <span class="by">by {{ actor(row.entry.updatedBy) }}</span>
               </td>
             </tr>
           }
@@ -71,6 +163,35 @@
 
 <p class="note">
   A write does not change a running container. qits-platform-deployments reads this application's
-  entries once per deployment and records the revision it deployed with, so a change arrives with
-  the next deployment.
+  entries for this environment once per deployment and records the revision it deployed with, so a
+  change arrives with the next deployment.
+</p>
+
+<p class="note">
+  <strong>This table is the overrides, not the whole configuration.</strong> A declared default is
+  what the application ships with, and it is stored nowhere here — a row on this page OVERRIDES that
+  default, or holds a key that never had one. Deleting a row does not delete the default; it returns
+  the key to it. What the container actually receives is the two together, which is the
+  @if (env()) {
+    <a
+      class="resolved-note-link"
+      [routerLink]="links.commands('applications', application(), 'envs', env(), 'resolved')"
+      >resolved view</a
+    >
+  } @else {
+    resolved view
+  }
+  of one environment, and the defaults themselves are in the
+  <a [routerLink]="links.commands('applications', application(), 'declarations')">declarations</a>.
+  Every tier's overrides at once are in the
+  <a [routerLink]="links.commands('applications', application(), 'matrix')">matrix</a>.
+</p>
+
+<p class="note">
+  <strong>orphaned</strong> is worked out at read time against the governing declaration and stored
+  nowhere. It says this row is not reaching the container, for one of two reasons: the declaration
+  does not account for the key at all, or it declares the key a <code>serviceAddress</code>, whose
+  address the platform renders per environment and whose stored row is ignored. Neither is an error,
+  and nothing cleans either up — a key dropped from a declaration leaves its rows exactly where they
+  were, which is what makes a rollback of that declaration cost nothing.
 </p>

@@ -22,7 +22,9 @@ import { ConfigurationLinks } from '../ui/links';
     <h1>No such page here</h1>
     <p>
       This is the deployment configuration. It lists the applications it holds entries for, shows
-      one application's entries, and shows what has been written to them — and nothing else.
+      one application's entries in one environment and what has been written to them, what that
+      application declares its own keys to be, what a deployment started now would receive, and how
+      the tiers differ — and nothing else. It changes none of it.
     </p>
     <p><a [routerLink]="links.commands()">Back to the applications</a></p>
   `,

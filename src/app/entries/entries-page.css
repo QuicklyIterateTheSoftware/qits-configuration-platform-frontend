@@ -1,16 +1,55 @@
-/* What this page needs beyond ui/page.css: a link to the history, and a table of stored values. */
+/* What this page needs beyond ui/page.css: the row of doors beside the heading, the environment
+   picker, a table of stored values, and the markers that say a row is not what it looks like. */
 
-.history-link {
+/* The other views of this application, beside the heading. They wrap rather than shrink: four short
+   words on one line at any ordinary width, and four lines rather than four clipped words when the
+   heading is a long application name on a narrow screen. */
+.head-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.9rem;
+}
+
+.head-links a {
   color: #4338ca;
   white-space: nowrap;
 }
 
 /* The posture line. Said quietly, right where the buttons an operator might look for are not: a
-   table with no actions otherwise reads as a table whose actions failed to load. */
+   table with no actions otherwise reads as a table whose actions failed to load. It has to say what
+   the picker is, too — a control on a read-only page is the one thing that could make a reader
+   doubt the sentence it sits under. */
 .posture {
   margin: -0.6rem 0 1rem;
   color: #6b7280;
   font-size: 0.88rem;
+}
+
+/* The environment bar. Held to a narrow column because the picker's list is the tiers of ONE
+   application — three or four short words — and a control stretched across a 1920px table would
+   read as the page's main event rather than as the address of what is below it. */
+.env-bar {
+  max-width: 22rem;
+  margin: 0 0 1.25rem;
+}
+
+.env-label {
+  margin: 0 0 0.3rem;
+  color: #6b7280;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Why this tier and not another. Drawn only where the address named none, and drawn as a note
+   rather than as a warning: settling is the correct answer to "whichever tier this application
+   has", not a fallback from a failure. */
+.settled {
+  margin: 0.45rem 0 0;
+  color: #6b7280;
+  font-size: 0.85rem;
 }
 
 /* The key column. Long enough for `env.QITS_SOMETHING_LONG` without wrapping, and wrapping rather
@@ -20,6 +59,45 @@
   max-width: 22rem;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* A marker under the thing it marks, never beside it. An `orphaned` badge inline after a key would
+   be pushed off the end of a long key by the very wrapping the key column needs, and a marker a
+   reader has to scroll to find is a marker that failed. */
+.marks {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+/* A key the governing declaration does not spell has no type, and the cell says so in words. An
+   empty cell here would read as a type that failed to load — which, when the declaration read
+   actually fails, is a different thing this page draws in a different place. */
+.undeclared {
+  font-style: italic;
+}
+
+/* The type column holds a badge and sometimes a second one under it; it must not be squeezed to the
+   width of the longer word. */
+.type {
+  white-space: nowrap;
+}
+
+/* Why the value beside it does not matter. It sits INSIDE the value cell, under the value, because
+   the claim is about that value and a note elsewhere on the row would be read as being about the
+   key. `white-space: normal` undoes the `pre-wrap` the value cell needs — the sentence is this
+   page's own prose rather than something an operator typed, and preserving its indentation would
+   indent it. */
+.rendered-note {
+  display: block;
+  margin-top: 0.3rem;
+  white-space: normal;
+  color: #6b7280;
+  font-size: 0.85rem;
+  font-family: system-ui, sans-serif;
+}
+
+.rendered-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .empty-value {

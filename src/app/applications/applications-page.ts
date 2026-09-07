@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import type { ApplicationSummary } from '../api/dto';
+import type { ApplicationEnvSummary, ApplicationSummary } from '../api/dto';
 import { ConfigurationApi } from '../api/configuration-api';
 import { Async } from '../ui/async';
 import { Empty } from '../ui/empty';
@@ -9,26 +9,61 @@ import { ConfigurationLinks } from '../ui/links';
 import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
 
 /**
- * The front door: every application this service holds configuration for.
+ * One row of the listing: the application, the tiers it is configured in, and the one number that
+ * exists only as a door.
+ *
+ * Derived once in a `computed` rather than by calling functions from the template, so a row is
+ * summed when the listing changes and not on every change detection — and so the aria-label the
+ * total's link needs is a string on the row rather than an expression spelled in markup.
+ */
+interface ApplicationRow {
+  readonly application: string;
+  readonly envs: readonly ApplicationEnvSummary[];
+  readonly total: number;
+  readonly matrixLabel: string;
+}
+
+/**
+ * The front door: every application this service holds configuration for, and the tiers each one is
+ * configured in.
  *
  * **Load budget: one request, and nothing per row.** `GET /configuration/api/applications` answers
- * the name, the entry count and the head revision for each one, so the two numbers in this table
- * cost nothing extra — asking each application for its entries to count them would turn one request
- * into one per row and would be the same number twice.
+ * the name and one row per environment — the env, its entry count, its head revision — for every
+ * application at once, so a table of forty applications costs what a table of one costs. Asking each
+ * application for its entries to count them would turn one request into one per row and arrive at
+ * the same numbers.
+ *
+ * **THE NUMBERS HANG OFF THE ENVIRONMENTS, and one aggregate on its own is the wrong shape.**
+ * "qits-gateway has 11 entries" is a fact nobody can act on: it does not say whether prod is missing
+ * the key dev has, which is the question an operator opens this listing to answer. So every row
+ * draws its environments one per line with that tier's own count and head revision beside it, and
+ * the aggregate is drawn only as the LINK to the matrix — the page where the same comparison is
+ * complete, key by key. A number that could mislead is worth keeping only where it leads somewhere
+ * that cannot.
+ *
+ * **That is also where the cross-env door lives, and it is a choice between two.** The matrix could
+ * hang off each row here or off the application's own page, and it does both — but the row's link is
+ * the one that matters, because the reader who needs it is the one looking at `dev 12 / prod 3` and
+ * wondering which nine keys are missing. Making them open the application first would put a page in
+ * front of the question this listing just raised.
+ *
+ * **The two numbers do not track each other, and now they do it per environment.** `entries` is what
+ * that tier holds NOW; `headRevision` is a position in the append-only log, which is global to the
+ * application rather than per-env — so it moves forward when an entry is deleted, and the distance
+ * between two of an application's tiers is the writes the other tiers took. It says which tier was
+ * written most recently, never how many times. Someone reading a tier at 3 entries and revision 240
+ * as "3 entries, 240 writes" would think the row was a bug.
  *
  * **An application at zero entries is still listed, and that is the service's decision rather than
  * this table's.** "Where did my configuration go" is the question this listing most needs to be able
- * to answer, so a row whose entries have all been deleted stays — with its head revision moved
- * forward, which is exactly how it says what happened.
- *
- * **The two numbers do not track each other, and the caption says so.** `entries` counts what is
- * stored now; `headRevision` counts how far the append-only log has run, so it moves forward on a
- * delete while the count goes down. Someone reading them as "N entries, N writes" would think a row
- * at 3 entries and revision 240 was a bug.
+ * to answer, so a tier whose entries have all been deleted stays — at zero, with its head revision
+ * moved forward, which is exactly how it says what happened. `envs` is never empty for the same
+ * reason: an application is in this list because some tier of it holds, or once held, an entry.
  *
  * There is no create-an-application form, because there is no such thing: an application exists here
- * because it has an entry, and the first entry is written on the application's own page. A form here
- * would create a name with nothing behind it, which the service has no row for.
+ * because it has an entry, and entries are written by the platform's own processes rather than by
+ * this screen. A form here would create a name with nothing behind it, which the service has no row
+ * for.
  *
  * **With a repository in scope this page is a doorway rather than a destination.** An operator who
  * arrived from that repository's sidebar wants its configuration, not a list to find it in — so
@@ -36,9 +71,14 @@ import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
  * REPLACES rather than pushes: the list was never a step the reader took, and leaving it in the
  * history would make Back bounce them straight forward again.
  *
- * The redirect waits for the listing on purpose. Navigating on the name alone would land on a page
- * for an application this service has nothing for, and the honest answer to "this repository has no
- * configuration" is this list with a line saying so.
+ * The redirect lands on the env-LESS address on purpose, even though this page knows every tier the
+ * application has. `applications/<name>` means "whichever tier this application has", the entries
+ * page settles it against the same listing and says which one it settled on; picking a tier HERE, on
+ * the reader's behalf, would be this page deciding that dev is what they came for.
+ *
+ * The redirect waits for the listing on purpose too. Navigating on the name alone would land on a
+ * page for an application this service has nothing for, and the honest answer to "this repository
+ * has no configuration" is this list with a line saying so.
  */
 @Component({
   selector: 'app-applications-page',
@@ -50,9 +90,9 @@ import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
       <h1>Deployment configuration</h1>
     </header>
     <p class="lede">
-      What each application on this platform is deployed with. Every entry here is read by
-      qits-platform-deployments on the application's next deployment, and every change to one is
-      kept.
+      What each application on this platform is deployed with, in every environment it is configured
+      in. Every entry here is read by qits-platform-deployments on that application's next
+      deployment, and every change to one is kept.
     </p>
 
     <app-async
@@ -70,7 +110,7 @@ import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
     }
 
     @if (state().kind === 'ready') {
-      @if (applications().length === 0) {
+      @if (rows().length === 0) {
         <app-empty
           message="No application has configuration here yet. An application appears in this list when its first entry is written."
         />
@@ -80,26 +120,54 @@ import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
             <caption>
               {{
                 caption()
-              }}. Entries are what is stored now; the head revision is how far the write log has
-              run, so it keeps moving forward when an entry is deleted.
+              }}. Each tier carries its own count: entries are what that tier holds now, and the
+              head revision is a position in one write log shared by every tier, so it moves forward
+              when an entry is deleted and says which tier was written most recently rather than how
+              often. The total is a door to the matrix, where the tiers stand side by side key by
+              key.
             </caption>
             <thead>
               <tr>
                 <th scope="col">Application</th>
+                <th scope="col">Environments</th>
                 <th scope="col" class="num">Entries</th>
-                <th scope="col" class="num">Head revision</th>
               </tr>
             </thead>
             <tbody>
-              @for (application of applications(); track application.application) {
+              @for (row of rows(); track row.application) {
                 <tr>
-                  <td>
-                    <a [routerLink]="links.commands('applications', application.application)">{{
-                      application.application
+                  <th scope="row">
+                    <a [routerLink]="links.commands('applications', row.application)">{{
+                      row.application
                     }}</a>
+                  </th>
+                  <td>
+                    <ul class="envs">
+                      @for (env of row.envs; track env.env) {
+                        <li>
+                          <a
+                            class="env"
+                            [routerLink]="
+                              links.commands('applications', row.application, 'envs', env.env)
+                            "
+                            >{{ env.env }}</a
+                          >
+                          <span class="env-entries">{{
+                            plural(env.entries, 'entry', 'entries')
+                          }}</span>
+                          <span class="env-rev subtle">rev {{ env.headRevision }}</span>
+                        </li>
+                      }
+                    </ul>
                   </td>
-                  <td class="num">{{ application.entries }}</td>
-                  <td class="num">{{ application.headRevision }}</td>
+                  <td class="num">
+                    <a
+                      class="total"
+                      [routerLink]="links.commands('applications', row.application, 'matrix')"
+                      [attr.aria-label]="row.matrixLabel"
+                      >{{ row.total }}</a
+                    >
+                  </td>
                 </tr>
               }
             </tbody>
@@ -110,15 +178,64 @@ import { LOADING, failed, ready, type Loadable } from '../ui/loadable';
 
     <p class="note">
       This is not what a deployment is running — it is what its next deployment will carry. The
-      deployer reads an application's entries once per deployment and records the revision it
-      deployed with.
+      deployer reads one application's entries for one environment per deployment and records the
+      revision it deployed with.
     </p>
+    <p class="note">
+      These counts are the entries STORED for each tier, which is not the whole configuration a
+      container receives. An application's declaration carries a default for keys nobody has
+      overridden, and those defaults are stored nowhere here — the resolved view of one environment
+      is where the two are drawn together.
+    </p>
+  `,
+  styles: `
+    /* The per-env breakdown inside a row. A list rather than a run of chips: the tiers of one
+       application are read DOWN, against each other, and a wrapping row of chips puts dev and prod
+       on different lines at some widths and the same line at others — which is exactly the
+       comparison this column exists to make easy. */
+    .envs {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .envs li {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      padding: 0.1rem 0;
+    }
+
+    /* Wide enough for the widest env name anybody uses (production) plus room, so the counts beside
+       them line up down the column. Aligning them is what turns three rows into a comparison rather
+       than three sentences. */
+    .envs .env {
+      display: inline-block;
+      min-width: 6rem;
+      color: #4338ca;
+    }
+
+    .envs .env-entries {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .envs .env-rev {
+      font-size: 0.85em;
+    }
+
+    /* The aggregate. It is a link and it looks like one, because a bare number here would be the
+       misleading half of this table standing on its own — see the note on the component. */
+    .total {
+      color: #4338ca;
+    }
   `,
 })
 export class ApplicationsPage {
   private readonly api = inject(ConfigurationApi);
   private readonly router = inject(Router);
   protected readonly links = inject(ConfigurationLinks);
+
+  protected readonly plural = plural;
 
   protected readonly state = signal<Loadable<readonly ApplicationSummary[]>>(LOADING);
 
@@ -130,8 +247,17 @@ export class ApplicationsPage {
     return state.kind === 'ready' ? state.value : [];
   });
 
+  protected readonly rows = computed<readonly ApplicationRow[]>(() =>
+    this.applications().map((application) => ({
+      application: application.application,
+      envs: application.envs,
+      total: application.envs.reduce((sum, env) => sum + env.entries, 0),
+      matrixLabel: `${application.application} in every environment, side by side`,
+    })),
+  );
+
   protected readonly caption = computed(() =>
-    plural(this.applications().length, 'application', 'applications'),
+    plural(this.rows().length, 'application', 'applications'),
   );
 
   constructor() {
